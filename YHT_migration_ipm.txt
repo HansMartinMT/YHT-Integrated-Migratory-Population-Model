@@ -1,0 +1,329 @@
+model{
+ #file name: YHT_migration_ipm.txt
+ 
+#  Naming 
+#  Parameter names begin with a capitalized letter
+#  Data are all lower case
+#  Indexing always follows - DAU, Year, Age, Sex
+#  If fewer indices are needed they follow the same order despite 
+#   omissions
+#########################
+#Priors
+#########################
+
+#  Pregnancy- Fixed effect for migratory status and random effect for year by migratory status
+for(d in 1:nmigr3){
+ Preg_mu[d] ~ dnorm(log(meanp[3,1,1]/(1 - meanp[3,1,1])), 1/meanp[3,1,2])
+ }
+
+for(d in 1:nmigr3){
+ sd_preg[d] ~ dunif(0,100)
+ tau_preg[d] <- 1/(sd_preg[d]^2)
+}
+      
+for(d in 1:nmigr3){
+ for(yr in 1:nyr){
+  preg_yr[d,yr] ~ dnorm(0,tau_preg[d])
+ }
+}
+
+for(d in 1:nmigr3){
+ for(yr in 1:nyr){
+  logit(Preg[d,yr]) <- Preg_mu[d] + preg_yr[d,yr]
+ }
+}
+
+#  Survival
+#  Priors on calf survival. fixed effect for migratory status and random effect for year by migratory status
+
+for(d in 1:nmigr3){
+ yoyS_mu[d] ~ dnorm(log(means[1,1,1]/(1 - means[1,1,1])), 1/means[1,1,2])
+}
+
+for(d in 1:nmigr3){
+ sd_yoyS[d] ~ dunif(0,100)
+ tau_yoyS[d] <- 1/(sd_yoyS[d]^2)
+}
+      
+for(d in 1:nmigr3){
+ for(yr in 1:nyr){
+  yoyS_yr[d,yr] ~ dnorm(0,tau_yoyS[d])
+ }
+}
+
+      
+#  Transform probability back to real scale and use as the intercept
+for(d in 1:nmigr3){
+ for(yr in 1:nyr){
+  logit(S[d,yr,1,1]) <- yoyS_mu[d] +  yoyS_yr[d,yr]
+  S[d,yr,1,2] <- S[d,yr,1,1] # male and female calf survival is equal
+ }
+}
+      
+#######################################
+#  Priors on survival 
+      
+#REMOVED SET JUVENILE SURVIVAL EQUAL TO ADULT FEMALE SURVIVAL
+#Yearling (Juvenile) survival set equal to adult female survival
+     
+        #  Informative priors are stored as probabilities - age, sex, parameter
+
+        for(d in 1:nmigr3){
+          for(yr in 1:nyr){
+            S[d,yr,2,1]<-S[d,yr,3,1]
+            S[d,yr,2,2]<-S[d,yr,3,1]
+          }
+        }
+      
+#  Priors on survival - Adults, two sexes 
+# Fixed effect for migratory status and sex with random year effect by migratory status
+      
+# Fixed effect for migratory status and sex 
+for(d in 1:nmigr3){
+ for(s in 1:2){
+  aS_mu[d,s] ~ dnorm(log(means[3,s,1]/(1 - means[3,s,1])), 1/means[3,s,2])
+ }
+}
+# Random effect on migratory status and year
+for(d in 1:nmigr3){
+ for(s in 1:2){
+  sd_aS[d,s ] ~ dunif(0,100)
+  tau_aS[d,s] <- 1/(sd_aS[d,s]^2)
+ }
+}
+
+for(d in 1:nmigr3){
+ for(s in 1:2){
+  for(yr in 1:nyr){
+     aS_yr[d,yr,s]~dnorm(0,tau_aS[d,s])
+  }
+ }
+}
+
+# Survival Linear Predictor 
+
+#  Informative priors are stored as probabilities
+#  Describe rate as function of linear predictor and define link
+#   function
+ for(d in 1:nmigr3){
+  for(yr in 1:nyr){
+  logit(S[d,yr,3,1]) <- aS_mu[d,1] + aS_yr[d,yr,1]
+  
+  #year affect is removed for males becuase we only have 1 year of data and don't want this fluctuation to drive the population dynamics.
+  logit(S[d,yr,3,2]) <- aS_mu[d,2] #+ aS_yr[d,yr,2] 
+  }
+ }      
+      
+#########################################
+###  Prior on first year population size
+#  Indexing - MIGR, Year, Age, Sex
+for(i in 1:nn1){
+ Nu[n1[i,1],1,n1[i,3],n1[i,4]] ~ dnorm(n1[i,5], 1/(n1[i,5]*20))T(0,)
+}
+
+#####################################################################
+###  Process model - 3 ages, 2 sex
+#  Using normal approximation because it is fast and mixes well
+#  Sex = 1 is a female
+#  Indexing follows - DAU, Year, Age, Sex
+
+#for(d in 1:nmigr3){
+for(yr in 2:nyr){
+
+#  Young of year
+#  Normal approximation of Poisson
+# Residents
+ nMu[1,yr,1,1] <- (nMu[1,yr,3,1] * Preg[1,yr-1]) * 0.5 * S[1,yr-1,1,1]
+ nMu[1,yr,1,2] <- nMu[1,yr,1,1] #we assume males are one half the number of recruits
+ Nu[1,yr,1,1] ~ dnorm(nMu[1,yr,1,1], 1/abs(nMu[1,yr,1,1]))T(0,)
+ Nu[1,yr,1,2] <- Nu[1,yr,1,1]
+ 
+ # eastern migrants
+ nMu[2,yr,1,1] <- (nMu[2,yr,3,1] * Preg[2,yr-1]) * 0.5 * S[2,yr-1,1,1]
+ nMu[2,yr,1,2] <- nMu[2,yr,1,1] #we assume males are one half the number of recruits
+ Nu[2,yr,1,1] ~ dnorm(nMu[2,yr,1,1], 1/abs(nMu[2,yr,1,1]))T(0,)
+ Nu[2,yr,1,2] <- Nu[2,yr,1,1]
+            
+ #western migrants
+ nMu[3,yr,1,1] <- (nMu[3,yr,3,1] * Preg[3,yr-1]) * 0.5 * S[3,yr-1,1,1]
+ nMu[3,yr,1,2] <- nMu[3,yr,1,1] #we assume males are one half the number of recruits
+ Nu[3,yr,1,1] ~ dnorm( nMu[3,yr,1,1], 1/abs(nMu[3,yr,1,1]) )T(0,)
+ Nu[3,yr,1,2] <- Nu[3,yr,1,1]
+          
+ for(s in 1:2){
+#  Juveniles
+#  Normal approximation of Binomial
+ #Residents
+  nMu[1,yr,2,s] <- Nu[1,yr-1,1,s] * S[1,yr-1,2,s]
+  nTau[1,yr,2,s] <- 1/abs(Nu[1,yr-1,1,s] *(S[1,yr-1,2,s]) * (1 - S[1,yr-1,2,s]) + 0.001)
+  Nu[1,yr,2,s] ~ dnorm(nMu[1,yr,2,s], nTau[1,yr,2,s])T(0,)
+ #Eastern Migrants
+  nMu[2,yr,2,s] <- Nu[2,yr-1,1,s] * S[2,yr-1,2,s]
+  nTau[2,yr,2,s] <- 1/abs(Nu[2,yr-1,1,s] *(S[2,yr-1,2,s]) * (1 - S[2,yr-1,2,s]) + 0.001)
+  Nu[2,yr,2,s] ~ dnorm(nMu[2,yr,2,s], nTau[2,yr,2,s])T(0,)
+ #Western Migrants
+  nMu[3,yr,2,s] <- Nu[3,yr-1,1,s] * S[3,yr-1,2,s]
+  nTau[3,yr,2,s] <- 1/abs(Nu[3,yr-1,1,s] *(S[3,yr-1,2,s]) * (1 - S[3,yr-1,2,s]) + 0.001)
+  Nu[3,yr,2,s] ~ dnorm(nMu[3,yr,2,s], nTau[3,yr,2,s])T(0,)
+
+#  Adults
+#  Normal approximation of Binomial
+
+#Residents
+  nJune[1,yr,3,s] <- (Nu[1,yr-1,2,s] + Nu[1,yr-1,3,s])	
+  nMu[1,yr,3,s] <- (nJune[1,yr,3,s] * SW[1,yr,3,1,1]) +(nJune[2,yr,3,s] * SW[2,yr,3,1,1]) + (nJune[3,yr,3,s] * SW[3,yr,3,1,1]) 
+  nTau[1,yr,3,s] <- 1/abs(nMu[1,yr,3,s] * S[1,yr-1,3,s] *(1 - S[1,yr-1,3,s]) + 0.001)
+  Nu[1,yr,3,s] ~ dnorm(nMu[1,yr,3,s] * S[1,yr-1,3,s], nTau[1,yr,3,s])T(0,)
+#Eastern Migrants
+  nJune[2,yr,3,s] <- (Nu[2,yr-1,2,s] + Nu[2,yr-1,3,s])
+  nMu[2,yr,3,s] <-(nJune[2,yr,3,s] * SW[2,yr,3,1,2]) + (nJune[1,yr,3,s] * SW[1,yr,3,1,2])
+  nTau[2,yr,3,s] <- 1/abs(nMu[2,yr,3,s] * S[2,yr-1,3,s] * (1 - S[2,yr-1,3,s]) + 0.001)
+  Nu[2,yr,3,s] ~ dnorm(nMu[2,yr,3,s] * S[2,yr-1,3,s], nTau[2,yr,3,s])T(0,)
+#Western Migrants
+  nJune[3,yr,3,s] <- (Nu[3,yr-1,2,s] + Nu[3,yr-1,3,s])
+  nMu[3,yr,3,s] <- (nJune[3,yr,3,s] * SW[3,yr,3,1,3]) + (nJune[1,yr,3,s] * SW[1,yr,3,1,3])
+  nTau[3,yr,3,s] <- 1/abs(nMu[3,yr,3,s] * S[3,yr-1,3,s] * (1 - S[3,yr-1,3,s]) + 0.001)
+  Nu[3,yr,3,s] ~ dnorm(nMu[3,yr,3,s] * S[3,yr-1,3,s], nTau[3,yr,3,s])T(0,)
+ }
+}
+      #}
+      
+
+######################################  
+#Observation Models
+#  Indexing/columns always follows
+#     1     2      3    4    5     6
+#   Migr2, Year, Age, Sex, Mean, Tau
+######################################
+      
+#  Model for minimum counts
+#  Need to add call to collector function in ipm_utility_funs.R
+    
+r ~ dunif(0, 2000) #this distribution defines the max population size
+ 
+
+for(i in 1:nmindat){
+ mu[i] <- r/(r + sum(totNfeb[1:3,mindat[i,2]])) #we only have a total count of all animals.
+ mindat[i,5] ~ dnegbin(mu[i], r)
+ #r ~ dunif(0, 5000)
+
+ #mu[i] <- totNfeb[1:3,mindat[i,2]] #we only have a total count of all animals.
+
+ #mindat[i,5] ~ dnorm(sum(totNfeb[1:3,mindat[i,2]]), 0.075*sum(totNfeb[1:3,mindat[i,2]]))T(0,)
+
+}
+
+#model for pregnancy rates
+for(i in 1:npregdat){
+ pregdat[i,5] ~ dnorm(Preg[pregdat[i,1],pregdat[i,2]],pregdat[i,6])T(0,1)
+}
+
+# Models for ratio data
+#  Calf:Cow Ratio Observations at Pop Level - [yr] these ratios are taken 8 months
+#after calves are born into the population so this is a combination of pregnancy rate of
+#migrants and residents, calf survival of migrants and residents and the ratio of migrant:
+# YOY : female ratio
+for(i in 1:nyoyfdat){
+ yoyfdat[i,5] ~ dnorm( (sum(yoyNfeb[1:3,yoyfdat[i,2]]) + 0.001) / (sum(fNfeb[1:3,yoyfdat[i,2]]) + 0.001),yoyfdat[i,6] )
+}
+
+#  Survival Observations at Migration Level - [dau,yr,age,sex]
+for(i in 1:nsdat){
+ sdat[i,5] ~ dnorm(S[sdat[i,1], sdat[i,2], sdat[i,3], sdat[i,4]], sdat[i,6])T(0, 1)
+}
+
+#########################################################################      
+#Observation model for migratory switching
+for(i in 1:nswitchdat){
+ tempSW[switchdat[i,1],switchdat[i,2],switchdat[i,3],switchdat[i,4],switchdat[i,5]] ~ dnorm(switchdat[i,6],switchdat[i,7])T(0,1)
+}
+#Make sure the probability of switching from one tactic sums to 1
+for(y in 2:nyr){
+ SW[1,y,3,1,1] <- tempSW[1,y,3,1,1]/(tempSW[1,y,3,1,1]+tempSW[1,y,3,1,2]+tempSW[1,y,3,1,3])
+ SW[1,y,3,1,2] <- tempSW[1,y,3,1,2]/(tempSW[1,y,3,1,1]+tempSW[1,y,3,1,2]+tempSW[1,y,3,1,3])
+ SW[1,y,3,1,3] <- tempSW[1,y,3,1,3]/(tempSW[1,y,3,1,1]+tempSW[1,y,3,1,2]+tempSW[1,y,3,1,3])
+  
+ SW[3,y,3,1,1] <- tempSW[3,y,3,1,1]/(tempSW[3,y,3,1,1] + tempSW[3,y,3,1,3])
+ SW[3,y,3,1,3] <- tempSW[3,y,3,1,3]/(tempSW[3,y,3,1,1] + tempSW[3,y,3,1,3])
+ SW[3,y,3,1,2] <- 0
+ 
+ SW[2,y,3,1,1] <- tempSW[2,y,3,1,1]/(tempSW[2,y,3,1,1] + tempSW[2,y,3,1,2])
+ SW[2,y,3,1,2] <- tempSW[2,y,3,1,2]/(tempSW[2,y,3,1,1] + tempSW[2,y,3,1,2])
+ SW[2,y,3,1,3] <- 0
+   
+}
+      
+      
+# Totals required for estimating ratios IN FEBRUARY
+
+for(d in 1:nmigr3){
+ for(yr in 2:nyr){
+  yoyNfeb[d,yr] <- nMu[d,yr,3,1] * Preg[d,yr-1] * (S[d,yr-1,1,1] ^ (8/12))
+  fNfeb[d,yr] <- Nu[d,yr-1,1,1] * (S[d,yr-1,2,1] ^ (8/12)) + nMu[d,yr,3,1] * (S[d,yr,3,1] ^ (8/12))
+  yrlmfeb[d,yr] <- Nu[d,yr-1,1,2] * (S[d,yr-1,2,2] ^ (8/12))
+  mNfeb[d,yr] <- nMu[d,yr,3,2] * (S[d,yr,3,2] ^ (8/12))
+  totNfeb[d,yr] <- yoyNfeb[d,yr] + fNfeb[d,yr] + yrlmfeb[d,yr] + mNfeb[d,yr]
+ }
+}
+
+#  Totals population sizes at the end of the biological year.
+for(d in 1:nmigr3){
+ for(yr in 1:nyr){
+  yN[d,yr] <- sum(Nu[d,yr,1,1:2])
+  fN[d,yr] <- sum(Nu[d,yr,2:3,1]) #change to adults only
+  mN[d,yr] <- sum(Nu[d,yr,2:3,2]) #change to adults only
+  totN[d,yr] <- yN[d,yr] + fN[d,yr] + mN[d,yr]
+  totNF[d,yr] <- yN[d,yr] + fN[d,yr]
+ }
+}
+
+#  Totals required for estimating lambda fitness- the number of individuals in a migratory tactic after migratory decisions are made at the beginning of the bio-year.
+for(d in 1:nmigr3){
+ for(yr in 2:nyr){
+ 
+ fNspring[d,yr] <- Nu[d,yr-1,1,1]  + nMu[d,yr,3,1] #The number of calves at the end of the previous time step (which now turn into juveniles) and the number of adults (Juv+adults from previous times steps + the number that switched.)
+ mNspring[d,yr] <- Nu[d,yr-1,1,2] + nMu[d,yr,3,2] #same as above
+ totNspring[d,yr] <- fNspring[d,yr] + mNspring[d,yr]
+ totNFspring[d,yr] <- fNspring[d,yr]
+ }
+}
+
+#  Incomplete vectors cannot be monitored, so aribitrary value is given
+#  to the first year
+#  Same constant trick is used here for the division
+#  Using the log and exp handles 0 gracefully, recall that
+#  log(x) + log(y) = log(xy), so the geometric mean is calculated using
+#  an algebraic rearrangment that is more robust to 0's
+
+for(d in 1:nmigr3){
+
+ lambda[d,1] <- 1
+ lambdaF[d,1] <- 1
+ lambdaSpringToWinter[d,1] <- 1 #lambda 
+ lambdaFSpringToWinter[d,1] <- 1
+ 
+ for(yr in 2:nyr){
+ 
+  lambdaSpringToWinter[d,yr] <- (totN[d,yr] + 0.001)/(totNspring[d,yr] + 0.001)
+  loglaSpringToWinter[d,yr] <- log(lambdaSpringToWinter[d,yr])
+  lambda[d,yr] <- (totN[d,yr] + 0.001)/(totN[d,yr-1] + 0.001)
+  logla[d,yr] <- log(lambda[d,yr])
+
+#Just female growth
+lambdaFSpringToWinter[d,yr] <- (totNF[d,yr] + 0.001)/(totNFspring[d,yr] + 0.001)
+  loglaFSpringToWinter[d,yr] <- log(lambdaFSpringToWinter[d,yr])
+  lambdaF[d,yr] <- (totNF[d,yr] + 0.001)/(totNF[d,yr-1] + 0.001)
+  loglaF[d,yr] <- log(lambdaF[d,yr])
+
+  
+ }
+ geom_mean_lambda[d]<-(exp(1)^sum(loglaSpringToWinter[d,2:nyr]))^(1/(nyr-1))
+ F_geom_mean_lambda[d]<-(exp(1)^sum(loglaFSpringToWinter[d,2:nyr]))^(1/(nyr-1))
+}
+
+for(yr in 2:nyr){
+ lambdatot[yr] <- (sum(totN[1:3,yr]) + 0.001)/(sum(totN[1:3,yr-1]) + 0.001)
+ loglatot[yr] <- log(lambdatot[yr])
+}
+
+}
